@@ -45,13 +45,6 @@ void createProcess(state_t *state, int prid, pcb_t* caller) {
     insertProcQ(&ready_queue, newProc);
     insertChild(caller, newProc);
 
-    // se non si riinizializza p_child dopo insertChild 
-    // da errore in terminateProcess
-    // quando si controlla se il pcb ha figli
-    // risulta che newProc non sia vuoto
-    // quando si cerca di terminare figli di figli il problema ritorna
-    INIT_LIST_HEAD(&(newProc->p_child));
-
     process_count++;
 
     RELEASE_LOCK(&global_lock);
@@ -64,7 +57,7 @@ pcb_t* findProcessByPid(int pid) {
     int i = 0;
     // ricerca fra i processori
     while (i < NCPU) {
-        process = current_process[getPRID()];
+        process = current_process[i];
         if (process->p_pid == pid) {
             return process;
         }
@@ -86,10 +79,42 @@ pcb_t* findProcessByPid(int pid) {
     return process;
 }
 
+int findInCurrents(pcb_t* process) {
+    int prid = getPRID();
+    int i = 0;
+    pcb_t* current;
+    while (i < NCPU) {
+        current = current_process[i];
+        if (i != prid && process == current) {
+            return i;
+        }
+        i++;
+    }
+    return -1;
+}
+
+void callSchedulerOnProcessor(int prid) {
+    state_t start_state = {
+        .status = MSTATUS_MPP_M,
+        .pc_epc = (memaddr)scheduler,
+        .gpr = {0},
+        .entry_hi = 0,
+        .cause = 0,
+        .mie = 0
+    };
+    start_state.reg_sp = (0x20020000 + prid * PAGESIZE);
+    INITCPU(prid, &start_state);
+}
+
 void removePcb(pcb_t* process) {
     outChild(process);
     if (process->p_semAdd != NULL) {
         outBlocked(process);
+    }
+    outProcQ(&ready_queue, process);
+    int processor = findInCurrents(process);
+    if (processor != -1) {
+        // chiama scheduler su processore
     }
     freePcb(process);
 }
@@ -110,7 +135,7 @@ void killTree(pcb_t* root) {
     while (1) {
         has_no_child = emptyChild(ptr_pcb);
         if (has_no_child && ptr_pcb == root) {
-            outChild(root);
+            removePcb(root);
             process_count--;
             return;
         }
@@ -151,10 +176,10 @@ void terminateProcess(state_t *state, int prid, pcb_t* caller) {
 }
 
 void passeren(state_t *state, int prid, pcb_t* caller) {
-    int *semaddr = (int*) state->gpr[25]; // semaphore address
+    int *semaddr = (int*) state->gpr[25];
     if (*semaddr == 0) {
         ACQUIRE_LOCK(&global_lock);
-        insertBlocked(semaddr, current_process[prid]); // insert in blocked list
+        insertBlocked(semaddr, current_process[prid]);
         RELEASE_LOCK(&global_lock);
         blocksys(state, prid, caller);
     }
@@ -175,7 +200,7 @@ void verhogen(state_t *state, int prid, pcb_t* caller) {
     int *semaddr = (int *) state->gpr[25];
     if (*semaddr == 1) {
         ACQUIRE_LOCK(&global_lock);
-        insertBlocked(semaddr, current_process[prid]); // insert in blocked list
+        insertBlocked(semaddr, current_process[prid]);
         RELEASE_LOCK(&global_lock);
         blocksys(state, prid, caller);
     }
@@ -248,7 +273,6 @@ void syscallHandler(state_t *state) {
         // traphandler
     }
 
-    // ACQUIRE_LOCK(&global_lock);
     switch (a0) {
     case -1:
         createProcess(state, prid, caller); 
@@ -281,5 +305,4 @@ void syscallHandler(state_t *state) {
         // traphandler
         break;
     }
-    // RELEASE_LOCK(&global_lock);
 }
