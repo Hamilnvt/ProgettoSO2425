@@ -1,0 +1,4 @@
+- Mathieu Linty       0001027831 mathieu.linty@studio.unibo.it
+- Samuele Castiglioni 0001114844 samuele.castiglioni@studio.unibo.it
+- Biagio  Garavini    0001125585 biagio.garavini@studio.unibo.it
+- Nicolo  Danesi      0001090849 nicolo.danesi@studio.unibo.it
